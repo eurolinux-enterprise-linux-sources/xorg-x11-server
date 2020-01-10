@@ -1,21 +1,21 @@
-From ded7c53126e27c450475ab9ae61e7db2c8a60bb6 Mon Sep 17 00:00:00 2001
+From d8178206f0ad01ea4b0dd67f13f77ace88fad69f Mon Sep 17 00:00:00 2001
 From: Adam Jackson <ajax@redhat.com>
 Date: Wed, 25 Feb 2015 16:03:13 -0500
-Subject: [PATCH xserver] composite: Implement backing-store-Always
+Subject: [PATCH] composite: Implement backing-store-Always
 
 Signed-off-by: Adam Jackson <ajax@redhat.com>
 ---
  composite/compalloc.c  |   2 +-
- composite/compinit.c   |  42 +++++++++++-----
+ composite/compinit.c   |  42 ++++++++++++----
  composite/compint.h    |   8 +++
  composite/compwindow.c |  70 +++++++++++++++++++++++++-
- dix/window.c           |  78 ++++++++++++++---------------
+ dix/window.c           |  78 ++++++++++++++--------------
  include/windowstr.h    |   1 +
  mi/mibitblt.c          |   5 +-
  mi/micopy.c            |   7 +--
- mi/mivaltree.c         | 132 ++++++++++++++++++++++++++-----------------------
+ mi/mivaltree.c         | 134 ++++++++++++++++++++++++++-----------------------
  mi/miwindow.c          |  30 +++++------
- 10 files changed, 237 insertions(+), 138 deletions(-)
+ 10 files changed, 238 insertions(+), 139 deletions(-)
 
 diff --git a/composite/compalloc.c b/composite/compalloc.c
 index 8daded0..81c58f6 100644
@@ -138,26 +138,26 @@ index 09241f2..4f19672 100644
      ChangeBorderWidthProcPtr ChangeBorderWidth;
      /*
       * Reparenting has an effect on Subwindows redirect
-@@ -289,6 +291,9 @@ Bool
+@@ -288,6 +290,9 @@ Bool
+ Bool
   compUnrealizeWindow(WindowPtr pWin);
  
- void
++void
 +compWindowExposures(WindowPtr pWin, RegionPtr reg);
 +
-+void
+ void
   compClipNotify(WindowPtr pWin, int dx, int dy);
  
- void
-@@ -300,6 +305,9 @@ compResizeWindow(WindowPtr pWin, int x, int y,
+@@ -299,6 +304,9 @@ void
+ compResizeWindow(WindowPtr pWin, int x, int y,
                   unsigned int w, unsigned int h, WindowPtr pSib);
  
- void
++void
 + compMarkUnrealizedWindow(WindowPtr pChild, WindowPtr pWin, Bool fromConfigure);
 +
-+void
+ void
   compChangeBorderWidth(WindowPtr pWin, unsigned int border_width);
  
- void
 diff --git a/composite/compwindow.c b/composite/compwindow.c
 index 77bdfa2..250ce98 100644
 --- a/composite/compwindow.c
@@ -467,17 +467,17 @@ index d49276c..20fad3a 100644
      if (wasRealized) {
          WindowsRestructured();
 diff --git a/include/windowstr.h b/include/windowstr.h
-index 53eef37..c4aa735 100644
+index 53eef37..ccec2f6 100644
 --- a/include/windowstr.h
 +++ b/include/windowstr.h
-@@ -158,6 +158,7 @@ typedef struct _Window {
-     unsigned mapped:1;
-     unsigned realized:1;        /* ancestors are all mapped */
-     unsigned viewable:1;        /* realized && InputOutput */
+@@ -169,6 +169,7 @@ typedef struct _Window {
+     unsigned damagedDescendants:1;      /* some descendants are damaged */
+     unsigned inhibitBGPaint:1;  /* paint the background? */
+ #endif
 +    unsigned paintable:1;
-     unsigned dontPropagate:3;   /* index into DontPropagateMasks */
-     unsigned forcedBS:1;        /* system-supplied backingStore */
-     unsigned redirectDraw:2;    /* COMPOSITE rendering redirect */
+ } WindowRec;
+ 
+ /*
 diff --git a/mi/mibitblt.c b/mi/mibitblt.c
 index 7243963..e8e4e60 100644
 --- a/mi/mibitblt.c
@@ -574,17 +574,7 @@ index ea6889f..3f44b0f 100644
 -        newVis = VisibilityPartiallyObscured;
 -        {
 -            RegionPtr pBounding;
-+    oldVis = newVis = pParent->visibility;
-+    if (pParent->realized) {
-+        switch (RegionContainsRect(universe, &borderSize)) {
-+        case rgnIN:
-+            newVis = VisibilityUnobscured;
-+            break;
-+        case rgnPART:
-+            newVis = VisibilityPartiallyObscured;
-+            {
-+                RegionPtr pBounding;
- 
+-
 -            if ((pBounding = wBoundingShape(pParent))) {
 -                switch (miShapedWindowIn(universe, pBounding,
 -                                         &borderSize,
@@ -596,6 +586,17 @@ index ea6889f..3f44b0f 100644
 -                case rgnOUT:
 -                    newVis = VisibilityFullyObscured;
 -                    break;
++    oldVis = newVis = pParent->visibility;
++    if (pParent->realized) {
++        switch (RegionContainsRect(universe, &borderSize)) {
++        case rgnIN:
++            newVis = VisibilityUnobscured;
++            break;
++        case rgnPART:
++            newVis = VisibilityPartiallyObscured;
++            {
++                RegionPtr pBounding;
++
 +                if ((pBounding = wBoundingShape(pParent))) {
 +                    switch (miShapedWindowIn(universe, pBounding,
 +                                             &borderSize,
@@ -937,5 +938,5 @@ index a1af3a7..486c9bf 100644
              anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pWin,
                                                             &pLayerWin);
 -- 
-2.5.0
+2.14.2
 
