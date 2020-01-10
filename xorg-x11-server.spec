@@ -42,7 +42,7 @@
 Summary:   X.Org X11 X server
 Name:      xorg-x11-server
 Version:   1.17.4
-Release:   16%{?gitdate:.%{gitdate}}%{?dist}.1
+Release:   17%{?gitdate:.%{gitdate}}%{?dist}
 URL:       http://www.x.org
 License:   MIT
 Group:     User Interface/X
@@ -649,13 +649,13 @@ rm -rf $RPM_BUILD_ROOT
 %{xserver_source_dir}
 
 %changelog
-* Thu Jan 25 2018 Scientific Linux Auto Patch Process <SCIENTIFIC-LINUX-DEVEL@LISTSERV.FNAL.GOV>
+* Wed Jun 20 2018 Scientific Linux Auto Patch Process <SCIENTIFIC-LINUX-DEVEL@LISTSERV.FNAL.GOV>
 - Added Source: xorg-x11-server.ini
 -->  Config file for automated patch script
 - Added Source: xorg-x11-server-SPEC-remove-TUV.patch
 -->  Redirect support requests to SL
 
-* Mon Nov 13 2017 Adam Jackson <ajax@redhat.com> - 1.17.4-16.1
+* Mon Nov 13 2017 Adam Jackson <ajax@redhat.com> - 1.17.4-17
 - Fix ABI bug in Always backing store patch
 
 * Wed Nov 02 2016 Adam Jackson <ajax@redhat.com> - 1.17.4-16
