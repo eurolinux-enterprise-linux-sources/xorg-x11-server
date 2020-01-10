@@ -1,0 +1,48 @@
+From b7d392931a309d0fe754869efb456ccd0385f3aa Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Wed, 3 Feb 2016 09:54:43 +0000
+Subject: [PATCH] dri2: Only invalidate the immediate Window upon
+ SetWindowPixmap
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+All callers of SetWindowPixmap will themselves be traversing the Window
+heirarchy updating the backing Pixmap of each child and so we can forgo
+doing the identical traversal inside the DRI2SetWindowPixmap handler.
+
+Reported-by: Loïc Yhuel <loic.yhuel@gmail.com>
+Link: http://lists.x.org/archives/xorg-devel/2015-February/045638.html
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Ville Syrjälä <ville.syrjala@linux.intel.com>
+Reviewed-by: Ville Syrjälä <ville.syrjala@linux.intel.com>
+---
+ hw/xfree86/dri2/dri2.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/hw/xfree86/dri2/dri2.c b/hw/xfree86/dri2/dri2.c
+index 60ea6dd..bbff11c 100644
+--- a/hw/xfree86/dri2/dri2.c
++++ b/hw/xfree86/dri2/dri2.c
+@@ -1385,8 +1385,7 @@ DRI2ConfigNotify(WindowPtr pWin, int x, int y, int w, int h, int bw,
+ static void
+ DRI2SetWindowPixmap(WindowPtr pWin, PixmapPtr pPix)
+ {
+-    DrawablePtr pDraw = (DrawablePtr) pWin;
+-    ScreenPtr pScreen = pDraw->pScreen;
++    ScreenPtr pScreen = pWin->drawable.pScreen;
+     DRI2ScreenPtr ds = DRI2GetScreen(pScreen);
+ 
+     pScreen->SetWindowPixmap = ds->SetWindowPixmap;
+@@ -1394,7 +1393,7 @@ DRI2SetWindowPixmap(WindowPtr pWin, PixmapPtr pPix)
+     ds->SetWindowPixmap = pScreen->SetWindowPixmap;
+     pScreen->SetWindowPixmap = DRI2SetWindowPixmap;
+ 
+-    DRI2InvalidateDrawableAll(pDraw);
++    DRI2InvalidateDrawable(&pWin->drawable);
+ }
+ 
+ #define MAX_PRIME DRI2DriverPrimeMask
+-- 
+2.10.0
+
