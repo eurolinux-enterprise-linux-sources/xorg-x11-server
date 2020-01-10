@@ -42,7 +42,7 @@
 Summary:   X.Org X11 X server
 Name:      xorg-x11-server
 Version:   1.17.4
-Release:   9.5%{?gitdate:.%{gitdate}}.sl6
+Release:   9%{?gitdate:.%{gitdate}}.sl6
 URL:       http://www.x.org
 License:   MIT
 Group:     User Interface/X
@@ -118,7 +118,6 @@ Patch9300: 0001-rpath-hack.patch
 
 # Bug 1179840 - [RFE] Enable "maxclients" option in x server
 Patch9400: 0001-configurable-maximum-number-of-clients.patch
-Patch9401: 0001-dix-Enable-indirect-GLX-by-default-add-xorg.conf-opt.patch
 
 %global moduledir	%{_libdir}/xorg/modules
 %global drimoduledir	%{_libdir}/dri
@@ -426,7 +425,6 @@ autoreconf -f -v --install || exit 1
 export CFLAGS="${RPM_OPT_FLAGS} -Wl,-z,relro -fno-strict-aliasing"
 
 %configure --enable-maintainer-mode %{xservers} \
-	--enable-listen-tcp \
 	--disable-static \
 	--with-pic \
 	--enable-dmx \
@@ -640,19 +638,13 @@ rm -rf $RPM_BUILD_ROOT
 %{xserver_source_dir}
 
 %changelog
-* Tue Jul 12 2016 Scientific Linux Auto Patch Process <SCIENTIFIC-LINUX-DEVEL@LISTSERV.FNAL.GOV>
+* Mon May 09 2016 Scientific Linux Auto Patch Process <SCIENTIFIC-LINUX-DEVEL@LISTSERV.FNAL.GOV>
 - Added Source: xorg-x11-server.ini
 -->  Config file for automated patch script
 - Added Source: xorg-x11-server-SPEC-remove-TUV.patch
 -->  Redirect support requests to SL
 - Ran Regex: (Release: .*)%{\?dist}(.*) => \1.sl6\2
 -->  Modify release string to note changes
-
-* Wed Jun 01 2016 Adam Jackson <ajax@redhat.com> - 1.17.4-9.4
-- Restore listen-on-TCP behaviour
-
-* Mon May 23 2016 Adam Jackson <ajax@redhat.com> - 1.17.4-9.1
-- Restore indirect GLX by default, and add xorg.conf option for it
 
 * Fri Apr 01 2016 Adam Jackson <ajax@redhat.com> 1.17.4-9
 - Require mesa-libEGL from Xorg subpackage
