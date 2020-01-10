@@ -1,0 +1,47 @@
+From 91d030f52244c16e7bb625fc9b05a9e55e977d9c Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Wed, 4 Nov 2015 12:26:23 -0500
+Subject: [PATCH] ephyr: Add -notresizeable option to make windows
+ non-resizeable
+
+RHEL 6.5 has a patch from upstream that adds the -resizeable option,
+but the patch is tweaked so that resizeability is the default. This
+patch adds a "-notresizeable" option that allows the user to turn the
+resizeability off. It was written by by Michele Baldessari and is not
+intended for upstream.
+
+See https://bugzilla.redhat.com/show_bug.cgi?id=1018405
+
+[Patch was originally by ssp@]
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ hw/kdrive/ephyr/ephyrinit.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/hw/kdrive/ephyr/ephyrinit.c b/hw/kdrive/ephyr/ephyrinit.c
+index 8fbaf1d..0dff97c 100644
+--- a/hw/kdrive/ephyr/ephyrinit.c
++++ b/hw/kdrive/ephyr/ephyrinit.c
+@@ -147,6 +147,7 @@ ddxUseMsg(void)
+     ErrorF("-output <NAME>       Attempt to run Xephyr fullscreen (restricted to given output geometry)\n");
+     ErrorF("-grayscale           Simulate 8bit grayscale\n");
+     ErrorF("-resizeable          Make Xephyr windows resizeable\n");
++    ErrorF("-notresizeable       Make Xephyr windows non-resizeable\n");
+ #ifdef GLAMOR
+     ErrorF("-glamor              Enable 2D acceleration using glamor\n");
+     ErrorF("-glamor_gles2        Enable 2D acceleration using glamor (with GLES2 only)\n");
+@@ -275,6 +276,10 @@ ddxProcessArgument(int argc, char **argv, int i)
+         EphyrWantResize = 1;
+         return 1;
+     }
++    else if (!strcmp(argv[i], "-notresizeable")) {
++	EphyrWantResize = 0;
++	return 1;
++    }
+ #ifdef GLAMOR
+     else if (!strcmp (argv[i], "-glamor")) {
+         ephyr_glamor = TRUE;
+-- 
+2.5.0
+

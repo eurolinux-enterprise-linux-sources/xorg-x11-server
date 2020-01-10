@@ -1,0 +1,55 @@
+From ea142ff77279e9b49fdfa83cdf87e0c0d44cf7b5 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Mon, 5 Mar 2012 13:45:31 -0500
+Subject: [PATCH 14/15] vbe: Only interpret complete failure as "DDC
+ unsupported"
+
+BIOSes will return different values for support here based on whether a
+monitor happens to be immediately attached, so we don't want to cache
+DDC_NONE unless the BIOS actually doesn't support the DDC extension.
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ hw/xfree86/vbe/vbe.c |    4 ++--
+ hw/xfree86/vbe/vbe.h |    3 ++-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/hw/xfree86/vbe/vbe.c b/hw/xfree86/vbe/vbe.c
+index 97a9bcf..10be098 100644
+--- a/hw/xfree86/vbe/vbe.c
++++ b/hw/xfree86/vbe/vbe.c
+@@ -207,7 +207,7 @@ vbeProbeDDC(vbeInfoPtr pVbe)
+         switch (pVbe->pInt10->bx & 0x3) {
+         case 0:
+             ddc_level = " none";
+-            pVbe->ddc = DDC_NONE;
++	    pVbe->ddc = DDC_SUPPORTED;
+             break;
+         case 1:
+             ddc_level = " 1";
+@@ -223,7 +223,7 @@ vbeProbeDDC(vbeInfoPtr pVbe)
+             break;
+         default:
+             ddc_level = "";
+-            pVbe->ddc = DDC_NONE;
++	    pVbe->ddc = DDC_SUPPORTED;
+             break;
+         }
+         xf86DrvMsgVerb(screen, X_INFO, 3, "VESA VBE DDC Level%s\n", ddc_level);
+diff --git a/hw/xfree86/vbe/vbe.h b/hw/xfree86/vbe/vbe.h
+index 3907c53..21669dd 100644
+--- a/hw/xfree86/vbe/vbe.h
++++ b/hw/xfree86/vbe/vbe.h
+@@ -19,7 +19,8 @@ typedef enum {
+     DDC_NONE,
+     DDC_1,
+     DDC_2,
+-    DDC_1_2
++    DDC_1_2,
++    DDC_SUPPORTED,
+ } ddc_lvl;
+ 
+ typedef struct {
+-- 
+1.7.7.6
+

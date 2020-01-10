@@ -1,0 +1,11 @@
+--- xorg-x11-server.spec.org	2014-10-16 10:03:50.538175919 -0500
++++ xorg-x11-server.spec	2014-10-16 10:03:57.065578718 -0500
+@@ -465,7 +465,7 @@ test `getminor extension` == %{extension
+ # ick
+ %if 0%{?rhel}
+ sed -i 's/WAYLAND_SCANNER_RULES.*//g' configure.ac
+-%global bodhi_flags --with-vendor-web="https://www.redhat.com/apps/support/" --with-vendor-name="Red Hat, Inc."
++%global bodhi_flags --with-vendor-web="http://www.scientificlinux.org/maillists" --with-vendor-name="Scientific Linux"
+ %endif
+ 
+ # --with-pie ?

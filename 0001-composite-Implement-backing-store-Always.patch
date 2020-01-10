@@ -1,0 +1,941 @@
+From ded7c53126e27c450475ab9ae61e7db2c8a60bb6 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Wed, 25 Feb 2015 16:03:13 -0500
+Subject: [PATCH xserver] composite: Implement backing-store-Always
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ composite/compalloc.c  |   2 +-
+ composite/compinit.c   |  42 +++++++++++-----
+ composite/compint.h    |   8 +++
+ composite/compwindow.c |  70 +++++++++++++++++++++++++-
+ dix/window.c           |  78 ++++++++++++++---------------
+ include/windowstr.h    |   1 +
+ mi/mibitblt.c          |   5 +-
+ mi/micopy.c            |   7 +--
+ mi/mivaltree.c         | 132 ++++++++++++++++++++++++++-----------------------
+ mi/miwindow.c          |  30 +++++------
+ 10 files changed, 237 insertions(+), 138 deletions(-)
+
+diff --git a/composite/compalloc.c b/composite/compalloc.c
+index 8daded0..81c58f6 100644
+--- a/composite/compalloc.c
++++ b/composite/compalloc.c
+@@ -106,7 +106,7 @@ compMarkWindows(WindowPtr pWin, WindowPtr *ppLayerWin)
+     ScreenPtr pScreen = pWin->drawable.pScreen;
+     WindowPtr pLayerWin = pWin;
+ 
+-    if (!pWin->viewable)
++    if (!pWin->viewable && pWin->backingStore != Always)
+         return FALSE;
+ 
+     (*pScreen->MarkOverlappedWindows) (pWin, pWin, &pLayerWin);
+diff --git a/composite/compinit.c b/composite/compinit.c
+index 3ac075a..7dc0b6e 100644
+--- a/composite/compinit.c
++++ b/composite/compinit.c
+@@ -67,6 +67,7 @@ compCloseScreen(ScreenPtr pScreen)
+     pScreen->ConfigNotify = cs->ConfigNotify;
+     pScreen->MoveWindow = cs->MoveWindow;
+     pScreen->ResizeWindow = cs->ResizeWindow;
++    pScreen->MarkUnrealizedWindow = cs->MarkUnrealizedWindow;
+     pScreen->ChangeBorderWidth = cs->ChangeBorderWidth;
+ 
+     pScreen->ClipNotify = cs->ClipNotify;
+@@ -74,6 +75,7 @@ compCloseScreen(ScreenPtr pScreen)
+     pScreen->RealizeWindow = cs->RealizeWindow;
+     pScreen->DestroyWindow = cs->DestroyWindow;
+     pScreen->CreateWindow = cs->CreateWindow;
++    pScreen->WindowExposures = cs->WindowExposures;
+     pScreen->CopyWindow = cs->CopyWindow;
+     pScreen->PositionWindow = cs->PositionWindow;
+ 
+@@ -105,6 +107,27 @@ compInstallColormap(ColormapPtr pColormap)
+     pScreen->InstallColormap = compInstallColormap;
+ }
+ 
++static void
++compCheckBackingStore(WindowPtr pWin)
++{
++    Bool should =
++        (pWin->backingStore == Always) ||
++        (pWin->backingStore == WhenMapped && pWin->viewable);
++
++    if (should && !pWin->backStorage) {
++        if (Success == compRedirectWindow(serverClient, pWin,
++                                          CompositeRedirectAutomatic))
++            pWin->backStorage = TRUE;
++    }
++    else if (!should && pWin->backStorage) {
++        if (Success == compUnredirectWindow(serverClient, pWin,
++                                            CompositeRedirectAutomatic))
++            pWin->backStorage = FALSE;
++    }
++    pWin->paintable = pWin->viewable ||
++        (pWin->backingStore == Always && pWin->backStorage);
++}
++
+ /* Fake backing store via automatic redirection */
+ static Bool
+ compChangeWindowAttributes(WindowPtr pWin, unsigned long mask)
+@@ -117,17 +140,8 @@ compChangeWindowAttributes(WindowPtr pWin, unsigned long mask)
+     ret = pScreen->ChangeWindowAttributes(pWin, mask);
+ 
+     if (ret && (mask & CWBackingStore) &&
+-        pScreen->backingStoreSupport != NotUseful) {
+-        if (pWin->backingStore != NotUseful && !pWin->backStorage) {
+-            compRedirectWindow(serverClient, pWin, CompositeRedirectAutomatic);
+-            pWin->backStorage = TRUE;
+-        }
+-        else if (pWin->backingStore == NotUseful && pWin->backStorage) {
+-            compUnredirectWindow(serverClient, pWin,
+-                                 CompositeRedirectAutomatic);
+-            pWin->backStorage = FALSE;
+-        }
+-    }
++        pScreen->backingStoreSupport != NotUseful)
++        compCheckBackingStore(pWin);
+ 
+     pScreen->ChangeWindowAttributes = compChangeWindowAttributes;
+ 
+@@ -416,6 +430,9 @@ compScreenInit(ScreenPtr pScreen)
+     cs->UnrealizeWindow = pScreen->UnrealizeWindow;
+     pScreen->UnrealizeWindow = compUnrealizeWindow;
+ 
++    cs->WindowExposures = pScreen->WindowExposures;
++    pScreen->WindowExposures = compWindowExposures;
++
+     cs->ClipNotify = pScreen->ClipNotify;
+     pScreen->ClipNotify = compClipNotify;
+ 
+@@ -428,6 +445,9 @@ compScreenInit(ScreenPtr pScreen)
+     cs->ResizeWindow = pScreen->ResizeWindow;
+     pScreen->ResizeWindow = compResizeWindow;
+ 
++    cs->MarkUnrealizedWindow = pScreen->MarkUnrealizedWindow;
++    pScreen->MarkUnrealizedWindow = compMarkUnrealizedWindow;
++
+     cs->ChangeBorderWidth = pScreen->ChangeBorderWidth;
+     pScreen->ChangeBorderWidth = compChangeBorderWidth;
+ 
+diff --git a/composite/compint.h b/composite/compint.h
+index 09241f2..4f19672 100644
+--- a/composite/compint.h
++++ b/composite/compint.h
+@@ -131,6 +131,7 @@ typedef struct _CompScreen {
+     DestroyWindowProcPtr DestroyWindow;
+     RealizeWindowProcPtr RealizeWindow;
+     UnrealizeWindowProcPtr UnrealizeWindow;
++    WindowExposuresProcPtr WindowExposures;
+     ClipNotifyProcPtr ClipNotify;
+     /*
+      * Called from ConfigureWindow, these
+@@ -140,6 +141,7 @@ typedef struct _CompScreen {
+     ConfigNotifyProcPtr ConfigNotify;
+     MoveWindowProcPtr MoveWindow;
+     ResizeWindowProcPtr ResizeWindow;
++    MarkUnrealizedWindowProcPtr MarkUnrealizedWindow;
+     ChangeBorderWidthProcPtr ChangeBorderWidth;
+     /*
+      * Reparenting has an effect on Subwindows redirect
+@@ -289,6 +291,9 @@ Bool
+  compUnrealizeWindow(WindowPtr pWin);
+ 
+ void
++compWindowExposures(WindowPtr pWin, RegionPtr reg);
++
++void
+  compClipNotify(WindowPtr pWin, int dx, int dy);
+ 
+ void
+@@ -300,6 +305,9 @@ compResizeWindow(WindowPtr pWin, int x, int y,
+                  unsigned int w, unsigned int h, WindowPtr pSib);
+ 
+ void
++ compMarkUnrealizedWindow(WindowPtr pChild, WindowPtr pWin, Bool fromConfigure);
++
++void
+  compChangeBorderWidth(WindowPtr pWin, unsigned int border_width);
+ 
+ void
+diff --git a/composite/compwindow.c b/composite/compwindow.c
+index 77bdfa2..250ce98 100644
+--- a/composite/compwindow.c
++++ b/composite/compwindow.c
+@@ -150,8 +150,10 @@ compCheckRedirect(WindowPtr pWin)
+     CompScreenPtr cs = GetCompScreen(pWin->drawable.pScreen);
+     Bool should;
+ 
+-    should = pWin->realized && (pWin->drawable.class != InputOnly) &&
+-        (cw != NULL) && (pWin->parent != NULL);
++    should = (pWin->realized || pWin->backingStore == Always) &&
++        (pWin->drawable.class != InputOnly) &&
++        (cw != NULL) &&
++        (pWin->parent != NULL);
+ 
+     /* Never redirect the overlay window */
+     if (cs->pOverlayWin != NULL) {
+@@ -288,6 +290,32 @@ compUnrealizeWindow(WindowPtr pWin)
+     return ret;
+ }
+ 
++void
++compWindowExposures(WindowPtr pWin, RegionPtr reg)
++{
++    ScreenPtr pScreen = pWin->drawable.pScreen;
++    CompScreenPtr cs = GetCompScreen(pScreen);
++
++    pScreen->WindowExposures = cs->WindowExposures;
++
++    if (pWin->backStorage) {
++        DamageDamageRegion(&pWin->drawable, reg);
++
++        /* should be RegionEmpty but buggy apps expect an expose */
++        {
++            BoxRec box = *RegionExtents(reg);
++            box.x2 = box.x1 + 1;
++            box.y2 = box.x1 + 1;
++            RegionReset(reg, &box);
++        }
++    }
++
++    pScreen->WindowExposures(pWin, reg);
++
++    cs->WindowExposures = pScreen->WindowExposures;
++    pScreen->WindowExposures = compWindowExposures;
++}
++
+ /*
+  * Called after the borderClip for the window has settled down
+  * We use this to make sure our extra borderClip has the right origin
+@@ -430,6 +458,36 @@ compChangeBorderWidth(WindowPtr pWin, unsigned int bw)
+     compCheckTree(pWin->drawable.pScreen);
+ }
+ 
++/*
++ * pWin is the top-level window being unmapped, pChild is one of its
++ * (previously viewable) descendents.  MUW under us will try to empty
++ * the child clip.
++ */
++void
++compMarkUnrealizedWindow(WindowPtr pChild, WindowPtr pWin, Bool fromConfigure)
++{
++    Bool should = FALSE;
++
++    if (pWin == pChild && pWin->backingStore == Always && pWin->backStorage) {
++        /* this is the top-level being unmapped, restore paintable */
++        pWin->paintable = (pWin->drawable.class == InputOutput);
++    } else if (pChild->parent->paintable && pChild->mapped) {
++        pChild->paintable = (pWin->drawable.class == InputOutput);
++    } else {
++        should = TRUE;
++    }
++
++    if (should) {
++        ScreenPtr pScreen = pWin->drawable.pScreen;
++        CompScreenPtr cs = GetCompScreen(pScreen);
++
++        pScreen->MarkUnrealizedWindow = cs->MarkUnrealizedWindow;
++        (*pScreen->MarkUnrealizedWindow) (pChild, pWin, fromConfigure);
++        cs->MarkUnrealizedWindow = pScreen->MarkUnrealizedWindow;
++        pScreen->MarkUnrealizedWindow = compMarkUnrealizedWindow;
++    }
++}
++
+ void
+ compReparentWindow(WindowPtr pWin, WindowPtr pPriorParent)
+ {
+@@ -594,6 +652,14 @@ compDestroyWindow(WindowPtr pWin)
+     CompSubwindowsPtr csw;
+     Bool ret;
+ 
++    /*
++     * Take down bs explicitly, to get ->backStorage cleared
++     */
++    if (pWin->backingStore != NotUseful) {
++        pWin->backingStore = NotUseful;
++        pScreen->ChangeWindowAttributes(pWin, CWBackingStore);
++    }
++
+     pScreen->DestroyWindow = cs->DestroyWindow;
+     while ((cw = GetCompWindow(pWin)))
+         FreeResource(cw->clients->id, RT_NONE);
+diff --git a/dix/window.c b/dix/window.c
+index d49276c..20fad3a 100644
+--- a/dix/window.c
++++ b/dix/window.c
+@@ -367,6 +367,7 @@ SetWindowToDefaults(WindowPtr pWin)
+     pWin->mapped = FALSE;       /* off */
+     pWin->realized = FALSE;     /* off */
+     pWin->viewable = FALSE;
++    pWin->paintable = FALSE;
+     pWin->visibility = VisibilityNotViewable;
+     pWin->overrideRedirect = FALSE;
+     pWin->saveUnder = FALSE;
+@@ -934,6 +935,7 @@ CrushTree(WindowPtr pWin)
+             FreeResource(pChild->drawable.id, RT_WINDOW);
+             pSib = pChild->nextSib;
+             pChild->viewable = FALSE;
++            pChild->paintable = FALSE;
+             if (pChild->realized) {
+                 pChild->realized = FALSE;
+                 (*UnrealizeWindow) (pChild);
+@@ -1465,7 +1467,7 @@ ChangeWindowAttributes(WindowPtr pWin, Mask vmask, XID *vlist, ClientPtr client)
+        for the tile to be rotated, and the correct function selected.
+      */
+     if (((vmaskCopy & (CWBorderPixel | CWBorderPixmap)) || borderRelative)
+-        && pWin->viewable && HasBorder(pWin)) {
++        && pWin->paintable && HasBorder(pWin)) {
+         RegionRec exposed;
+ 
+         RegionNull(&exposed);
+@@ -2039,7 +2041,7 @@ ReflectStackChange(WindowPtr pWin, WindowPtr pSib, VTKind kind)
+ {
+ /* Note that pSib might be NULL */
+ 
+-    Bool WasViewable = (Bool) pWin->viewable;
++    Bool WasPaintable = (Bool) pWin->paintable;
+     Bool anyMarked;
+     WindowPtr pFirstChange;
+     WindowPtr pLayerWin;
+@@ -2051,7 +2053,7 @@ ReflectStackChange(WindowPtr pWin, WindowPtr pSib, VTKind kind)
+ 
+     pFirstChange = MoveWindowInStack(pWin, pSib);
+ 
+-    if (WasViewable) {
++    if (WasPaintable) {
+         anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pFirstChange,
+                                                        &pLayerWin);
+         if (pLayerWin != pWin)
+@@ -2490,8 +2492,9 @@ RealizeTree(WindowPtr pWin)
+     pChild = pWin;
+     while (1) {
+         if (pChild->mapped) {
+-            pChild->realized = TRUE;
++            pChild->realized = pChild->parent->realized;
+             pChild->viewable = (pChild->drawable.class == InputOutput);
++            pChild->paintable = (pChild->drawable.class == InputOutput);
+             (*Realize) (pChild);
+             if (pChild->firstChild) {
+                 pChild = pChild->firstChild;
+@@ -2567,7 +2570,7 @@ MapWindow(WindowPtr pWin, ClientPtr client)
+         if (SubStrSend(pWin, pParent))
+             DeliverMapNotify(pWin);
+ 
+-        if (!pParent->realized)
++        if (!pParent->realized && !pParent->paintable)
+             return Success;
+         RealizeTree(pWin);
+         if (pWin->viewable) {
+@@ -2589,6 +2592,7 @@ MapWindow(WindowPtr pWin, ClientPtr client)
+         pWin->mapped = TRUE;
+         pWin->realized = TRUE;  /* for roots */
+         pWin->viewable = pWin->drawable.class == InputOutput;
++        pWin->paintable = pWin->drawable.class == InputOutput;
+         /* We SHOULD check for an error value here XXX */
+         (*pScreen->RealizeWindow) (pWin);
+         if (pScreen->ClipNotify)
+@@ -2637,7 +2641,7 @@ MapSubwindows(WindowPtr pParent, ClientPtr client)
+ 
+             if (!pFirstMapped)
+                 pFirstMapped = pWin;
+-            if (pParent->realized) {
++            if (pParent->realized || pParent->paintable) {
+                 RealizeTree(pWin);
+                 if (pWin->viewable) {
+                     anyMarked |= (*pScreen->MarkOverlappedWindows) (pWin, pWin,
+@@ -2695,6 +2699,7 @@ UnrealizeTree(WindowPtr pWin, Bool fromConfigure)
+             DeleteWindowFromAnyEvents(pChild, FALSE);
+             if (pChild->viewable) {
+                 pChild->viewable = FALSE;
++                pChild->paintable = FALSE;
+                 (*MarkUnrealizedWindow) (pChild, pWin, fromConfigure);
+                 pChild->drawable.serialNumber = NEXT_SERIAL_NUMBER;
+             }
+@@ -2734,7 +2739,7 @@ UnmapWindow(WindowPtr pWin, Bool fromConfigure)
+ {
+     WindowPtr pParent;
+     Bool wasRealized = (Bool) pWin->realized;
+-    Bool wasViewable = (Bool) pWin->viewable;
++    Bool wasPaintable = pWin->paintable;
+     ScreenPtr pScreen = pWin->drawable.pScreen;
+     WindowPtr pLayerWin = pWin;
+ 
+@@ -2742,21 +2747,19 @@ UnmapWindow(WindowPtr pWin, Bool fromConfigure)
+         return Success;
+     if (SubStrSend(pWin, pParent))
+         DeliverUnmapNotify(pWin, fromConfigure);
+-    if (wasViewable && !fromConfigure) {
+-        pWin->valdata = UnmapValData;
++    if (wasPaintable && !fromConfigure) {
++        (*pScreen->MarkWindow) (pWin);
+         (*pScreen->MarkOverlappedWindows) (pWin, pWin->nextSib, &pLayerWin);
+         (*pScreen->MarkWindow) (pLayerWin->parent);
+     }
+     pWin->mapped = FALSE;
+     if (wasRealized)
+         UnrealizeTree(pWin, fromConfigure);
+-    if (wasViewable) {
+-        if (!fromConfigure) {
+-            (*pScreen->ValidateTree) (pLayerWin->parent, pWin, VTUnmap);
+-            (*pScreen->HandleExposures) (pLayerWin->parent);
+-            if (pScreen->PostValidateTree)
+-                (*pScreen->PostValidateTree) (pLayerWin->parent, pWin, VTUnmap);
+-        }
++    if (wasPaintable && !fromConfigure) {
++        (*pScreen->ValidateTree) (pLayerWin->parent, pWin, VTUnmap);
++        (*pScreen->HandleExposures) (pLayerWin->parent);
++        if (pScreen->PostValidateTree)
++            (*pScreen->PostValidateTree) (pLayerWin->parent, pWin, VTUnmap);
+     }
+     if (wasRealized && !fromConfigure) {
+         WindowsRestructured();
+@@ -2776,7 +2779,7 @@ UnmapSubwindows(WindowPtr pWin)
+ {
+     WindowPtr pChild, pHead;
+     Bool wasRealized = (Bool) pWin->realized;
+-    Bool wasViewable = (Bool) pWin->viewable;
++    Bool wasPaintable = pWin->paintable;
+     Bool anyMarked = FALSE;
+     Mask parentNotify;
+     WindowPtr pLayerWin = NULL;
+@@ -2787,7 +2790,7 @@ UnmapSubwindows(WindowPtr pWin)
+     parentNotify = SubSend(pWin);
+     pHead = RealChildHead(pWin);
+ 
+-    if (wasViewable)
++    if (wasPaintable)
+         pLayerWin = (*pScreen->GetLayerWindow) (pWin);
+ 
+     for (pChild = pWin->lastChild; pChild != pHead; pChild = pChild->prevSib) {
+@@ -2795,7 +2798,7 @@ UnmapSubwindows(WindowPtr pWin)
+             if (parentNotify || StrSend(pChild))
+                 DeliverUnmapNotify(pChild, xFalse);
+             if (pChild->viewable) {
+-                pChild->valdata = UnmapValData;
++                (*pScreen->MarkWindow) (pChild);
+                 anyMarked = TRUE;
+             }
+             pChild->mapped = FALSE;
+@@ -2803,31 +2806,28 @@ UnmapSubwindows(WindowPtr pWin)
+                 UnrealizeTree(pChild, FALSE);
+         }
+     }
+-    if (wasViewable) {
+-        if (anyMarked) {
+-            if (pLayerWin->parent == pWin)
+-                (*pScreen->MarkWindow) (pWin);
+-            else {
+-                WindowPtr ptmp;
++    if (wasPaintable && anyMarked) {
++        if (pLayerWin->parent == pWin)
++            (*pScreen->MarkWindow) (pWin);
++        else {
++            WindowPtr ptmp;
+ 
+-                (*pScreen->MarkOverlappedWindows) (pWin, pLayerWin, NULL);
+-                (*pScreen->MarkWindow) (pLayerWin->parent);
++            (*pScreen->MarkOverlappedWindows) (pWin, pLayerWin, NULL);
++            (*pScreen->MarkWindow) (pLayerWin->parent);
+ 
+-                /* Windows between pWin and pLayerWin may not have been marked */
+-                ptmp = pWin;
++            /* Windows between pWin and pLayerWin may not have been marked */
++            ptmp = pWin;
+ 
+-                while (ptmp != pLayerWin->parent) {
+-                    (*pScreen->MarkWindow) (ptmp);
+-                    ptmp = ptmp->parent;
+-                }
+-                pHead = pWin->firstChild;
++            while (ptmp != pLayerWin->parent) {
++                (*pScreen->MarkWindow) (ptmp);
++                ptmp = ptmp->parent;
+             }
+-            (*pScreen->ValidateTree) (pLayerWin->parent, pHead, VTUnmap);
+-            (*pScreen->HandleExposures) (pLayerWin->parent);
+-            if (pScreen->PostValidateTree)
+-                (*pScreen->PostValidateTree) (pLayerWin->parent, pHead,
+-                                              VTUnmap);
++            pHead = pWin->firstChild;
+         }
++        (*pScreen->ValidateTree) (pLayerWin->parent, pHead, VTUnmap);
++        (*pScreen->HandleExposures) (pLayerWin->parent);
++        if (pScreen->PostValidateTree)
++            (*pScreen->PostValidateTree) (pLayerWin->parent, pHead, VTUnmap);
+     }
+     if (wasRealized) {
+         WindowsRestructured();
+diff --git a/include/windowstr.h b/include/windowstr.h
+index 53eef37..c4aa735 100644
+--- a/include/windowstr.h
++++ b/include/windowstr.h
+@@ -158,6 +158,7 @@ typedef struct _Window {
+     unsigned mapped:1;
+     unsigned realized:1;        /* ancestors are all mapped */
+     unsigned viewable:1;        /* realized && InputOutput */
++    unsigned paintable:1;
+     unsigned dontPropagate:3;   /* index into DontPropagateMasks */
+     unsigned forcedBS:1;        /* system-supplied backingStore */
+     unsigned redirectDraw:2;    /* COMPOSITE rendering redirect */
+diff --git a/mi/mibitblt.c b/mi/mibitblt.c
+index 7243963..e8e4e60 100644
+--- a/mi/mibitblt.c
++++ b/mi/mibitblt.c
+@@ -96,9 +96,8 @@ miCopyArea(DrawablePtr pSrcDrawable,
+     srcx = xIn + pSrcDrawable->x;
+     srcy = yIn + pSrcDrawable->y;
+ 
+-    /* If the destination isn't realized, this is easy */
+-    if (pDstDrawable->type == DRAWABLE_WINDOW &&
+-        !((WindowPtr) pDstDrawable)->realized)
++    /* Bail early if we'd do no work */
++    if (RegionNil(pGC->pCompositeClip))
+         return NULL;
+ 
+     /* clip the source */
+diff --git a/mi/micopy.c b/mi/micopy.c
+index 2409c78..0fd1579 100644
+--- a/mi/micopy.c
++++ b/mi/micopy.c
+@@ -152,12 +152,9 @@ miDoCopy(DrawablePtr pSrcDrawable,
+     Bool fastDst = FALSE;       /* for fast clipping with one rect dest */
+     Bool fastExpose = FALSE;    /* for fast exposures with pixmap source */
+ 
+-    /* Short cut for unmapped windows */
+-
+-    if (pDstDrawable->type == DRAWABLE_WINDOW &&
+-        !((WindowPtr) pDstDrawable)->realized) {
++    /* Bail early if we'd do no work */
++    if (RegionNil(pGC->pCompositeClip))
+         return NULL;
+-    }
+ 
+     if (pSrcDrawable->pScreen->SourceValidate) {
+         (*pSrcDrawable->pScreen->SourceValidate) (pSrcDrawable, xIn, yIn,
+diff --git a/mi/mivaltree.c b/mi/mivaltree.c
+index ea6889f..3f44b0f 100644
+--- a/mi/mivaltree.c
++++ b/mi/mivaltree.c
+@@ -162,16 +162,28 @@ miShapedWindowIn(RegionPtr universe, RegionPtr bounding,
+     return rgnOUT;
+ }
+ 
++static void
++setVisibility(WindowPtr pWin, int newVis)
++{
++    if (pWin->visibility != newVis) {
++        pWin->visibility = newVis;
++        if ((pWin->eventMask | wOtherEventMasks(pWin)) & VisibilityChangeMask)
++            SendVisibilityNotify(pWin);
++    }
++}
++
+ /*
+  * Manual redirected windows are treated as transparent; they do not obscure
+- * siblings or parent windows
++ * siblings or parent windows.  Likewise windows that are paintable but not
++ * mapped.
+  */
+ 
+-#ifdef COMPOSITE
+-#define TreatAsTransparent(w)	((w)->redirectDraw == RedirectDrawManual)
+-#else
+-#define TreatAsTransparent(w)	FALSE
+-#endif
++static Bool
++TreatAsTransparent(WindowPtr w)
++{
++    return (w->redirectDraw == RedirectDrawManual) ||
++        (w->paintable && !w->mapped);
++}
+ 
+ #define HasParentRelativeBorder(w) (!(w)->borderIsPixel && \
+ 				    HasBorder(w) && \
+@@ -181,7 +193,7 @@ miShapedWindowIn(RegionPtr universe, RegionPtr bounding,
+  *-----------------------------------------------------------------------
+  * miComputeClips --
+  *	Recompute the clipList, borderClip, exposed and borderExposed
+- *	regions for pParent and its children. Only viewable windows are
++ *	regions for pParent and its children. Only paintable windows are
+  *	taken into account.
+  *
+  * Results:
+@@ -240,40 +252,41 @@ miComputeClips(WindowPtr pParent,
+     }
+ #endif
+ 
+-    oldVis = pParent->visibility;
+-    switch (RegionContainsRect(universe, &borderSize)) {
+-    case rgnIN:
+-        newVis = VisibilityUnobscured;
+-        break;
+-    case rgnPART:
+-        newVis = VisibilityPartiallyObscured;
+-        {
+-            RegionPtr pBounding;
++    oldVis = newVis = pParent->visibility;
++    if (pParent->realized) {
++        switch (RegionContainsRect(universe, &borderSize)) {
++        case rgnIN:
++            newVis = VisibilityUnobscured;
++            break;
++        case rgnPART:
++            newVis = VisibilityPartiallyObscured;
++            {
++                RegionPtr pBounding;
+ 
+-            if ((pBounding = wBoundingShape(pParent))) {
+-                switch (miShapedWindowIn(universe, pBounding,
+-                                         &borderSize,
+-                                         pParent->drawable.x,
+-                                         pParent->drawable.y)) {
+-                case rgnIN:
+-                    newVis = VisibilityUnobscured;
+-                    break;
+-                case rgnOUT:
+-                    newVis = VisibilityFullyObscured;
+-                    break;
++                if ((pBounding = wBoundingShape(pParent))) {
++                    switch (miShapedWindowIn(universe, pBounding,
++                                             &borderSize,
++                                             pParent->drawable.x,
++                                             pParent->drawable.y)) {
++                    case rgnIN:
++                        newVis = VisibilityUnobscured;
++                        break;
++                    case rgnOUT:
++                        newVis = VisibilityFullyObscured;
++                        break;
++                    }
+                 }
+             }
++            break;
++        default:
++            newVis = VisibilityFullyObscured;
++            break;
+         }
+-        break;
+-    default:
+-        newVis = VisibilityFullyObscured;
+-        break;
+     }
+-    pParent->visibility = newVis;
+-    if (oldVis != newVis &&
+-        ((pParent->
+-          eventMask | wOtherEventMasks(pParent)) & VisibilityChangeMask))
+-        SendVisibilityNotify(pParent);
++    else {
++        newVis = VisibilityNotViewable;
++    }
++    setVisibility(pParent, newVis);
+ 
+     dx = pParent->drawable.x - pParent->valdata->before.oldAbsCorner.x;
+     dy = pParent->drawable.y - pParent->valdata->before.oldAbsCorner.y;
+@@ -293,14 +306,13 @@ miComputeClips(WindowPtr pParent,
+              (oldVis == VisibilityUnobscured))) {
+             pChild = pParent;
+             while (1) {
+-                if (pChild->viewable) {
++                if (pChild->paintable) {
+                     if (pChild->visibility != VisibilityFullyObscured) {
+                         RegionTranslate(&pChild->borderClip, dx, dy);
+                         RegionTranslate(&pChild->clipList, dx, dy);
+                         pChild->drawable.serialNumber = NEXT_SERIAL_NUMBER;
+                         if (pScreen->ClipNotify)
+                             (*pScreen->ClipNotify) (pChild, dx, dy);
+-
+                     }
+                     if (pChild->valdata) {
+                         RegionNull(&pChild->valdata->after.borderExposed);
+@@ -399,22 +411,22 @@ miComputeClips(WindowPtr pParent,
+             ((pChild->drawable.y == pParent->lastChild->drawable.y) &&
+              (pChild->drawable.x < pParent->lastChild->drawable.x))) {
+             for (; pChild; pChild = pChild->nextSib) {
+-                if (pChild->viewable && !TreatAsTransparent(pChild))
++                if (pChild->paintable && !TreatAsTransparent(pChild))
+                     RegionAppend(&childUnion, &pChild->borderSize);
+             }
+         }
+         else {
+             for (pChild = pParent->lastChild; pChild; pChild = pChild->prevSib) {
+-                if (pChild->viewable && !TreatAsTransparent(pChild))
++                if (pChild->paintable && !TreatAsTransparent(pChild))
+                     RegionAppend(&childUnion, &pChild->borderSize);
+             }
+         }
+         RegionValidate(&childUnion, &overlap);
+ 
+         for (pChild = pParent->firstChild; pChild; pChild = pChild->nextSib) {
+-            if (pChild->viewable) {
++            if (pChild->paintable) {
+                 /*
+-                 * If the child is viewable, we want to remove its extents
++                 * If the child is paintable, we want to remove its extents
+                  * from the current universe, but we only re-clip it if
+                  * it's been marked.
+                  */
+@@ -482,16 +494,11 @@ static void
+ miTreeObscured(WindowPtr pParent)
+ {
+     WindowPtr pChild;
+-    int oldVis;
+ 
+     pChild = pParent;
+     while (1) {
+         if (pChild->viewable) {
+-            oldVis = pChild->visibility;
+-            if (oldVis != (pChild->visibility = VisibilityFullyObscured) &&
+-                ((pChild->
+-                  eventMask | wOtherEventMasks(pChild)) & VisibilityChangeMask))
+-                SendVisibilityNotify(pChild);
++            setVisibility(pChild, VisibilityFullyObscured);
+             if (pChild->firstChild) {
+                 pChild = pChild->firstChild;
+                 continue;
+@@ -564,7 +571,7 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+     ScreenPtr pScreen;
+     WindowPtr pWin;
+     Bool overlap;
+-    int viewvals;
++    int paintables = 0;
+     Bool forward;
+ 
+     pScreen = pParent->drawable.pScreen;
+@@ -581,7 +588,6 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+      * children in their new configuration.
+      */
+     RegionNull(&totalClip);
+-    viewvals = 0;
+     if (RegionBroken(&pParent->clipList) && !RegionBroken(&pParent->borderClip)) {
+         kind = VTBroken;
+         /*
+@@ -593,12 +599,12 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+         RegionIntersect(&totalClip, &totalClip, &pParent->winSize);
+ 
+         for (pWin = pParent->firstChild; pWin != pChild; pWin = pWin->nextSib) {
+-            if (pWin->viewable && !TreatAsTransparent(pWin))
++            if (pWin->paintable && !TreatAsTransparent(pWin))
+                 RegionSubtract(&totalClip, &totalClip, &pWin->borderSize);
+         }
+         for (pWin = pChild; pWin; pWin = pWin->nextSib)
+-            if (pWin->valdata && pWin->viewable)
+-                viewvals++;
++            if (pWin->valdata && pWin->paintable)
++                paintables++;
+ 
+         RegionEmpty(&pParent->clipList);
+     }
+@@ -610,8 +616,8 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+             for (pWin = pChild; pWin; pWin = pWin->nextSib) {
+                 if (pWin->valdata) {
+                     RegionAppend(&totalClip, getBorderClip(pWin));
+-                    if (pWin->viewable)
+-                        viewvals++;
++                    if (pWin->paintable)
++                        paintables++;
+                 }
+             }
+         }
+@@ -621,8 +627,8 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+             while (1) {
+                 if (pWin->valdata) {
+                     RegionAppend(&totalClip, getBorderClip(pWin));
+-                    if (pWin->viewable)
+-                        viewvals++;
++                    if (pWin->paintable)
++                        paintables++;
+                 }
+                 if (pWin == pChild)
+                     break;
+@@ -642,7 +648,7 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+     overlap = TRUE;
+     if (kind != VTStack) {
+         RegionUnion(&totalClip, &totalClip, &pParent->clipList);
+-        if (viewvals > 1) {
++        if (paintables > 1) {
+             /*
+              * precompute childUnion to discover whether any of them
+              * overlap.  This seems redundant, but performance studies
+@@ -653,14 +659,14 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+             RegionNull(&childUnion);
+             if (forward) {
+                 for (pWin = pChild; pWin; pWin = pWin->nextSib)
+-                    if (pWin->valdata && pWin->viewable &&
++                    if (pWin->valdata && pWin->paintable &&
+                         !TreatAsTransparent(pWin))
+                         RegionAppend(&childUnion, &pWin->borderSize);
+             }
+             else {
+                 pWin = pParent->lastChild;
+                 while (1) {
+-                    if (pWin->valdata && pWin->viewable &&
++                    if (pWin->valdata && pWin->paintable &&
+                         !TreatAsTransparent(pWin))
+                         RegionAppend(&childUnion, &pWin->borderSize);
+                     if (pWin == pChild)
+@@ -675,7 +681,7 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+     }
+ 
+     for (pWin = pChild; pWin != NullWindow; pWin = pWin->nextSib) {
+-        if (pWin->viewable) {
++        if (pWin->paintable) {
+             if (pWin->valdata) {
+                 RegionIntersect(&childClip, &totalClip, &pWin->borderSize);
+                 miComputeClips(pWin, pScreen, &childClip, kind, &exposed);
+@@ -683,7 +689,8 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+                     RegionSubtract(&totalClip, &totalClip, &pWin->borderSize);
+                 }
+             }
+-            else if (pWin->visibility == VisibilityNotViewable) {
++            else if (pWin->viewable &&
++                     pWin->visibility == VisibilityNotViewable) {
+                 miTreeObscured(pWin);
+             }
+         }
+@@ -693,6 +700,7 @@ miValidateTree(WindowPtr pParent,       /* Parent to validate */
+                 if (pScreen->ClipNotify)
+                     (*pScreen->ClipNotify) (pWin, 0, 0);
+                 RegionEmpty(&pWin->borderClip);
++                free(pWin->valdata);
+                 pWin->valdata = NULL;
+             }
+         }
+diff --git a/mi/miwindow.c b/mi/miwindow.c
+index a1af3a7..486c9bf 100644
+--- a/mi/miwindow.c
++++ b/mi/miwindow.c
+@@ -151,7 +151,7 @@ miMarkOverlappedWindows(WindowPtr pWin, WindowPtr pFirst, WindowPtr *ppLayerWin)
+          */
+         pChild = pWin;
+         while (1) {
+-            if (pChild->viewable) {
++            if (pChild->paintable) {
+                 if (RegionBroken(&pChild->winSize))
+                     SetWinSize(pChild);
+                 if (RegionBroken(&pChild->borderSize))
+@@ -175,7 +175,7 @@ miMarkOverlappedWindows(WindowPtr pWin, WindowPtr pFirst, WindowPtr *ppLayerWin)
+         box = RegionExtents(&pWin->borderSize);
+         pLast = pChild->parent->lastChild;
+         while (1) {
+-            if (pChild->viewable) {
++            if (pChild->paintable) {
+                 if (RegionBroken(&pChild->winSize))
+                     SetWinSize(pChild);
+                 if (RegionBroken(&pChild->borderSize))
+@@ -242,7 +242,7 @@ void
+ miMoveWindow(WindowPtr pWin, int x, int y, WindowPtr pNextSib, VTKind kind)
+ {
+     WindowPtr pParent;
+-    Bool WasViewable = (Bool) (pWin->viewable);
++    Bool WasPaintable = pWin->paintable;
+     short bw;
+     RegionPtr oldRegion = NULL;
+     DDXPointRec oldpt;
+@@ -259,7 +259,7 @@ miMoveWindow(WindowPtr pWin, int x, int y, WindowPtr pNextSib, VTKind kind)
+ 
+     oldpt.x = pWin->drawable.x;
+     oldpt.y = pWin->drawable.y;
+-    if (WasViewable) {
++    if (WasPaintable) {
+         oldRegion = RegionCreate(NullBox, 1);
+         RegionCopy(oldRegion, &pWin->borderClip);
+         anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pWin, &pLayerWin);
+@@ -278,7 +278,7 @@ miMoveWindow(WindowPtr pWin, int x, int y, WindowPtr pNextSib, VTKind kind)
+ 
+     ResizeChildrenWinSize(pWin, x - oldpt.x, y - oldpt.y, 0, 0);
+ 
+-    if (WasViewable) {
++    if (WasPaintable) {
+         if (pLayerWin == pWin)
+             anyMarked |= (*pScreen->MarkOverlappedWindows)
+                 (pWin, windowToValidate, NULL);
+@@ -341,7 +341,7 @@ miResizeWindow(WindowPtr pWin, int x, int y, unsigned int w, unsigned int h,
+                WindowPtr pSib)
+ {
+     WindowPtr pParent;
+-    Bool WasViewable = (Bool) (pWin->viewable);
++    Bool WasPaintable = pWin->paintable;
+     unsigned short width = pWin->drawable.width, height = pWin->drawable.height;
+     short oldx = pWin->drawable.x, oldy = pWin->drawable.y;
+     int bw = wBorderWidth(pWin);
+@@ -371,7 +371,7 @@ miResizeWindow(WindowPtr pWin, int x, int y, unsigned int w, unsigned int h,
+     pScreen = pWin->drawable.pScreen;
+     newx = pParent->drawable.x + x + bw;
+     newy = pParent->drawable.y + y + bw;
+-    if (WasViewable) {
++    if (WasPaintable) {
+         anyMarked = FALSE;
+         /*
+          * save the visible region of the window
+@@ -446,7 +446,7 @@ miResizeWindow(WindowPtr pWin, int x, int y, unsigned int w, unsigned int h,
+ 
+     pFirstChange = MoveWindowInStack(pWin, pSib);
+ 
+-    if (WasViewable) {
++    if (WasPaintable) {
+         pRegion = RegionCreate(NullBox, 1);
+ 
+         if (pLayerWin == pWin)
+@@ -472,7 +472,7 @@ miResizeWindow(WindowPtr pWin, int x, int y, unsigned int w, unsigned int h,
+ 
+     GravityTranslate(x, y, oldx, oldy, dw, dh, pWin->bitGravity, &nx, &ny);
+ 
+-    if (WasViewable) {
++    if (WasPaintable) {
+         /* avoid the border */
+         if (HasBorder(pWin)) {
+             int offx, offy, dx, dy;
+@@ -634,13 +634,13 @@ miGetLayerWindow(WindowPtr pWin)
+ void
+ miSetShape(WindowPtr pWin, int kind)
+ {
+-    Bool WasViewable = (Bool) (pWin->viewable);
++    Bool WasPaintable = pWin->paintable;
+     ScreenPtr pScreen = pWin->drawable.pScreen;
+     Bool anyMarked = FALSE;
+     WindowPtr pLayerWin;
+ 
+     if (kind != ShapeInput) {
+-        if (WasViewable) {
++        if (WasPaintable) {
+             anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pWin,
+                                                            &pLayerWin);
+             if (pWin->valdata) {
+@@ -661,7 +661,7 @@ miSetShape(WindowPtr pWin, int kind)
+ 
+         ResizeChildrenWinSize(pWin, 0, 0, 0, 0);
+ 
+-        if (WasViewable) {
++        if (WasPaintable) {
+             anyMarked |= (*pScreen->MarkOverlappedWindows) (pWin, pWin, NULL);
+ 
+             if (anyMarked) {
+@@ -687,7 +687,7 @@ miChangeBorderWidth(WindowPtr pWin, unsigned int width)
+     int oldwidth;
+     Bool anyMarked = FALSE;
+     ScreenPtr pScreen;
+-    Bool WasViewable = (Bool) (pWin->viewable);
++    Bool WasPaintable = pWin->paintable;
+     Bool HadBorder;
+     WindowPtr pLayerWin;
+ 
+@@ -696,13 +696,13 @@ miChangeBorderWidth(WindowPtr pWin, unsigned int width)
+         return;
+     HadBorder = HasBorder(pWin);
+     pScreen = pWin->drawable.pScreen;
+-    if (WasViewable && width < oldwidth)
++    if (WasPaintable && width < oldwidth)
+         anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pWin, &pLayerWin);
+ 
+     pWin->borderWidth = width;
+     SetBorderSize(pWin);
+ 
+-    if (WasViewable) {
++    if (WasPaintable) {
+         if (width > oldwidth) {
+             anyMarked = (*pScreen->MarkOverlappedWindows) (pWin, pWin,
+                                                            &pLayerWin);
+-- 
+2.5.0
+

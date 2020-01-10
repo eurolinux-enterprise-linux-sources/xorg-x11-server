@@ -1,0 +1,26 @@
+From 741e4a4b6b855991eeb590279d222d56897366e4 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Wed, 6 Jul 2011 11:58:29 -0400
+Subject: [PATCH 09/15] Re-add -nr command line option for gdm compatibility
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ os/utils.c |    2 ++
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+
+diff --git a/os/utils.c b/os/utils.c
+index 86730c5..808d709 100644
+--- a/os/utils.c
++++ b/os/utils.c
+@@ -835,6 +835,8 @@ ProcessCommandLine(int argc, char *argv[])
+                     UseMsg();
+             }
+         }
++	else if (strcmp( argv[i], "-nr") == 0) /* gdm bc */
++	    bgNoneRoot = TRUE;
+         else if (strcmp(argv[i], "-maxbigreqsize") == 0) {
+             if (++i < argc) {
+                 long reqSizeArg = atol(argv[i]);
+-- 
+1.7.7.6
+

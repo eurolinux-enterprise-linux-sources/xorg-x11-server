@@ -1,0 +1,29 @@
+From 622fb5399688e4d4945b2c45c19d67ee576879dc Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Mon, 26 May 2014 08:38:26 +1000
+Subject: [PATCH] RHEL6: make ephyr resizable by default
+
+Patch was dropped in the merge commit (195078ecc6ef). Original patch to add
+the -resizeable option is upstream, but RHEL6 enables resizable by default.
+
+This is a RHEL6-specific change, not for upstream.
+---
+ hw/kdrive/ephyr/ephyr.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/kdrive/ephyr/ephyr.c b/hw/kdrive/ephyr/ephyr.c
+index 164ebdc..dbc1b4b 100644
+--- a/hw/kdrive/ephyr/ephyr.c
++++ b/hw/kdrive/ephyr/ephyr.c
+@@ -67,7 +67,7 @@ typedef struct _EphyrInputPrivate {
+ } EphyrKbdPrivate, EphyrPointerPrivate;
+ 
+ Bool EphyrWantGrayScale = 0;
+-Bool EphyrWantResize = 0;
++Bool EphyrWantResize = 1;
+ Bool EphyrWantNoHostGrab = 0;
+ 
+ Bool
+-- 
+2.5.0
+
