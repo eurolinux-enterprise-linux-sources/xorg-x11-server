@@ -42,7 +42,7 @@
 Summary:   X.Org X11 X server
 Name:      xorg-x11-server
 Version:   1.20.1
-Release:   5.2%{?gitdate:.%{gitdate}}%{?dist}
+Release:   5.3%{?gitdate:.%{gitdate}}%{?dist}
 URL:       http://www.x.org
 License:   MIT
 Group:     User Interface/X
@@ -590,6 +590,9 @@ rm -rf $RPM_BUILD_ROOT
 %{xserver_source_dir}
 
 %changelog
+* Tue Feb 12 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.3
+- Sync platform probe patch with upstream
+
 * Fri Nov 23 2018 Olivier Fourdan <ofourdan@redhat.com> - 1.20.1-5.2
 - Move LeaveVT after resetting randr pointers in xf86CrtcCloseScreen
 
