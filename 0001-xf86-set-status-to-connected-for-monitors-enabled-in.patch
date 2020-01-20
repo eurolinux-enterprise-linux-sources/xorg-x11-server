@@ -1,0 +1,74 @@
+From 8ab80fd5057f3d954ac6dc310cc8773e9694a0b1 Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Fri, 29 Mar 2019 08:44:07 +1000
+Subject: [PATCH] xf86: set status to connected for monitors enabled in conf
+
+If the user sets Option "Enable" "TRUE" for a monitor, the X
+server will connect the connector a crtc but tell the user it
+is disconnected.
+
+However the user in this case is mutter, when it gets it's view
+of the output configuration it sees the output is disconnected
+and never sets it up again, which seems like the right thing to do.
+
+If we let the user enable a monitor, lets just set it as always
+connected.
+
+Reviewed-by: Olivier Fourdan <ofourdan@redhat.com>
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+---
+ hw/xfree86/modes/xf86Crtc.c    | 10 ++++++++++
+ hw/xfree86/modes/xf86Crtc.h    |  1 +
+ hw/xfree86/modes/xf86RandR12.c |  5 ++++-
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/hw/xfree86/modes/xf86Crtc.c b/hw/xfree86/modes/xf86Crtc.c
+index b3b84cc13..21daf9a01 100644
+--- a/hw/xfree86/modes/xf86Crtc.c
++++ b/hw/xfree86/modes/xf86Crtc.c
+@@ -552,6 +552,16 @@ xf86OutputSetMonitor(xf86OutputPtr output)
+                    "Output %s has no monitor section\n", output->name);
+ }
+ 
++Bool
++xf86OutputForceEnabled(xf86OutputPtr output)
++{
++    Bool enable;
++
++    if (xf86GetOptValBool(output->options, OPTION_ENABLE, &enable) && enable)
++        return TRUE;
++    return FALSE;
++}
++
+ static Bool
+ xf86OutputEnabled(xf86OutputPtr output, Bool strict)
+ {
+diff --git a/hw/xfree86/modes/xf86Crtc.h b/hw/xfree86/modes/xf86Crtc.h
+index 427c6bff4..bf3e808bc 100644
+--- a/hw/xfree86/modes/xf86Crtc.h
++++ b/hw/xfree86/modes/xf86Crtc.h
+@@ -1144,4 +1144,5 @@ xf86ProviderSetup(ScrnInfoPtr scrn,
+ extern _X_EXPORT void
+ xf86DetachAllCrtc(ScrnInfoPtr scrn);
+ 
++Bool xf86OutputForceEnabled(xf86OutputPtr output);
+ #endif                          /* _XF86CRTC_H_ */
+diff --git a/hw/xfree86/modes/xf86RandR12.c b/hw/xfree86/modes/xf86RandR12.c
+index 0838dbf82..b476c07ce 100644
+--- a/hw/xfree86/modes/xf86RandR12.c
++++ b/hw/xfree86/modes/xf86RandR12.c
+@@ -1647,7 +1647,10 @@ xf86RandR12SetInfo12(ScreenPtr pScreen)
+             RROutputSetConnection(output->randr_output, RR_Connected);
+             break;
+         case XF86OutputStatusDisconnected:
+-            RROutputSetConnection(output->randr_output, RR_Disconnected);
++	    if (xf86OutputForceEnabled(output))
++                RROutputSetConnection(output->randr_output, RR_Connected);
++	    else
++                RROutputSetConnection(output->randr_output, RR_Disconnected);
+             break;
+         case XF86OutputStatusUnknown:
+             RROutputSetConnection(output->randr_output, RR_UnknownConnection);
+-- 
+2.20.1
+

@@ -34,6 +34,7 @@ xorg.conf snippet.
 Signed-off-by: Dave Airlie <airlied@gmail.com>
 [hdegoede@redhat.com: Make configurable, fix with nvidia, submit upstream]
 Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+[paper over crash in RRProviderAutoConfigGpuScreen - ajax]
 ---
  hw/xfree86/common/xf86Config.c      | 19 +++++++++++++++++++
  hw/xfree86/common/xf86Globals.c     |  2 ++
@@ -273,7 +274,7 @@ index e4bc2bf..e04c18f 100644
 +    rrScrPrivPtr pScrPriv = rrGetScrPriv(pScreen);
 +    rrScrPrivPtr masterPriv = rrGetScrPriv(masterScreen);
 +    RRProviderPtr provider = pScrPriv->provider;
-+    RRProviderPtr master_provider = masterPriv->provider;
++    RRProviderPtr master_provider = masterPriv ? masterPriv->provider : 0;
 +
 +    if (!provider || !master_provider)
 +        return;

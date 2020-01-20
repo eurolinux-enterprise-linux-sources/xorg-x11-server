@@ -182,12 +182,15 @@ struct xwl_window {
     struct xorg_list link_damage;
     struct wl_callback *frame_callback;
     Bool allow_commits;
-    WindowPtr present_window;
+#ifdef GLAMOR_HAS_GBM
+    Bool present_flipped;
+#endif
 };
 
 #ifdef GLAMOR_HAS_GBM
 struct xwl_present_window {
     struct xwl_screen *xwl_screen;
+    struct xwl_present_event *sync_flip;
     WindowPtr window;
     struct xorg_list link;
 
@@ -272,6 +275,7 @@ struct xwl_seat {
     char *keymap;
     struct wl_surface *keyboard_focus;
 
+    struct xorg_list axis_discrete_pending;
     struct xorg_list sync_pending;
 
     struct xwl_pointer_warp_emulator *pointer_warp_emulator;
@@ -310,13 +314,13 @@ struct xwl_tablet_tool {
 
     DeviceIntPtr xdevice;
     uint32_t proximity_in_serial;
-    uint32_t x;
-    uint32_t y;
+    double x;
+    double y;
     uint32_t pressure;
-    float tilt_x;
-    float tilt_y;
-    float rotation;
-    float slider;
+    double tilt_x;
+    double tilt_y;
+    double rotation;
+    double slider;
 
     uint32_t buttons_now,
              buttons_prev;
@@ -450,6 +454,7 @@ void xwl_glamor_egl_make_current(struct xwl_screen *xwl_screen);
 #ifdef GLAMOR_HAS_GBM
 Bool xwl_present_init(ScreenPtr screen);
 void xwl_present_cleanup(WindowPtr window);
+void xwl_present_unrealize_window(WindowPtr window);
 #endif /* GLAMOR_HAS_GBM */
 
 #ifdef XV

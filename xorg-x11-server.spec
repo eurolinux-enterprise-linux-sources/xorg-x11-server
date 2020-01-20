@@ -41,8 +41,8 @@
 
 Summary:   X.Org X11 X server
 Name:      xorg-x11-server
-Version:   1.20.1
-Release:   5.6%{?gitdate:.%{gitdate}}%{?dist}
+Version:   1.20.4
+Release:   7%{?gitdate:.%{gitdate}}%{?dist}
 URL:       http://www.x.org
 License:   MIT
 Group:     User Interface/X
@@ -101,20 +101,25 @@ Patch9710: 0001-modesetting-software-cursor-hack.patch
 # Bug 1599885 - RFE: enable backing store's Always mode
 Patch9750: 0001-composite-Implement-backing-store-Always.patch
 
-Patch9751: 0001-glamor_egl-Don-t-initialize-on-llvmpipe.patch
-Patch9752: 0001-xwayland-Don-t-initialize-glamor-on-llvmpipe.patch
-Patch9753: 0001-linux-Make-platform-device-probe-less-fragile.patch
+#Patch9751: 0001-glamor_egl-Don-t-initialize-on-llvmpipe.patch
+#Patch9752: 0001-xwayland-Don-t-initialize-glamor-on-llvmpipe.patch
+#Patch9753: 0001-linux-Make-platform-device-probe-less-fragile.patch
 Patch9754: 0001-xfree86-try-harder-to-span-on-multihead.patch
 Patch9755: 0001-modesetting-Hide-atomic-behind-Option-Atomic-boolean.patch
 Patch9756: 0001-xfree86-LeaveVT-from-xf86CrtcCloseScreen.patch
-Patch9757: 0001-Disable-logfile-and-modulepath-when-running-with-ele.patch
+#Patch9757: 0001-Disable-logfile-and-modulepath-when-running-with-ele.patch
+
+# Startx will have segment fault with hyper-V environment
+Patch9759: 0001-Fix-segfault-on-probing-a-non-PCI-platform-device-on.patch
+
+# Bug 1640207 - Qt5 scroll misbehaving after XTest button event
+Patch9758: 0001-dix-leave-last.valuators-alone-on-slave-switch.patch
+
+# Bug 1612924 - upstream backport for allow monitors to be enabled connected
+Patch9800: 0001-xf86-set-status-to-connected-for-monitors-enabled-in.patch
 
 # Bug 1680120 - upstream backport to fix user switching
 Patch9900: 0001-xfree86-Only-switch-to-original-VT-if-it-is-active.patch
-# Bug 1717309 - Startx will have segment fault with hyper-V environment
-Patch9901: 0001-Fix-segfault-on-probing-a-non-PCI-platform-device-on.patch
-# ... which also needs https://gitlab.freedesktop.org/xorg/xserver/merge_requests/217
-Patch9902: 0001-linux-Fix-platform-device-PCI-detection-for-complex-.patch
 
 %global moduledir	%{_libdir}/xorg/modules
 %global drimoduledir	%{_libdir}/dri
@@ -597,20 +602,29 @@ rm -rf $RPM_BUILD_ROOT
 %{xserver_source_dir}
 
 %changelog
-* Wed Jun 19 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.6
-- Fix platform device PCI detection for complex bus topologies
+* Tue May 28 2019 Adam Jackson <ajax@redhat.com> - 1.20.4-7
+- Fix a segfault with non-PCI platform devices (and other cases)
 
-* Mon Jun 17 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.5
-- Fix segfault in non-PCI platform detection
-
-* Wed Jun 12 2019 Ray Strode <rstrode@redhat.com> - 1.20.1-5.4
+* Mon May 06 2019 Ray Strode <rstrode@redhat.com> - 1.20.4-6
 - Stop VT switching when inactive server dies
-  Related: #1719361
+  Resolves: #1680120
 
-* Tue Feb 12 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.3
+* Thu Apr 25 2019 Adam Jackson <ajax@redhat.com> - 1.20.4-5
+- Fix a crash in RRProviderAutoConfigGpuScreen
+
+* Wed Apr 03 2019 Dave Airlie <airlied@redhat.com> - 1.20.4-3
+- Backport fix for 1612924 - enabled monitors
+
+* Tue Apr 02 2019 Peter Hutterer <peter.hutterer@redhat.com> 1.20.4-2
+- Don't reset last.valuators on slave device switch (#1640207)
+
+* Tue Mar 05 2019 Adam Jackson <ajax@redhat.com> - 1.20.4-1
+- xserver 1.20.4
+
+* Tue Feb 12 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-7
 - Sync platform probe patch with upstream
 
-* Fri Nov 23 2018 Olivier Fourdan <ofourdan@redhat.com> - 1.20.1-5.2
+* Fri Nov 23 2018 Olivier Fourdan <ofourdan@redhat.com> - 1.20.1-6
 - Move LeaveVT after resetting randr pointers in xf86CrtcCloseScreen
 
 * Mon Oct 22 2018 Adam Jackson <ajax@redhat.com> - 1.20.1-5.1

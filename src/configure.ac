@@ -26,9 +26,9 @@ dnl
 dnl Process this file with autoconf to create configure.
 
 AC_PREREQ(2.60)
-AC_INIT([xorg-server], 1.20.1, [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg], xorg-server)
-RELEASE_DATE="2018-08-07"
-RELEASE_NAME="Kale Salad"
+AC_INIT([xorg-server], 1.20.4, [https://gitlab.freedesktop.org/xorg/xserver/issues], xorg-server)
+RELEASE_DATE="2019-02-25"
+RELEASE_NAME="Chestnut Tortelloni"
 AC_CONFIG_SRCDIR([Makefile.am])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign dist-bzip2])
