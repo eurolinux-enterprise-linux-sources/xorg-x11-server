@@ -1,0 +1,25 @@
+From 15a6d58414b85867f39237518f2b3bac7bba6a20 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Tue, 29 May 2018 15:11:54 -0400
+Subject: [PATCH] link with -z now
+
+---
+ hw/xfree86/Makefile.am | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/xfree86/Makefile.am b/hw/xfree86/Makefile.am
+index a7a1be2..197701d 100644
+--- a/hw/xfree86/Makefile.am
++++ b/hw/xfree86/Makefile.am
+@@ -78,7 +78,7 @@ Xorg_LDADD = \
+             $(XSERVER_SYS_LIBS)
+ Xorg_DEPENDENCIES = $(LOCAL_LIBS)
+ 
+-Xorg_LDFLAGS = $(LD_EXPORT_SYMBOLS_FLAG)
++Xorg_LDFLAGS = $(LD_EXPORT_SYMBOLS_FLAG) -Wl,-z,now -pie
+ 
+ if SUID_WRAPPER
+ wrapexecdir = $(SUID_WRAPPER_DIR)
+-- 
+2.17.0
+

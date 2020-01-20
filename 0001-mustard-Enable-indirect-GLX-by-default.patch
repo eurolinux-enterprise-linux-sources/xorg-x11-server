@@ -1,0 +1,26 @@
+From 81e6a4910daf1d2e13804553182e901c65d7a583 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Mon, 20 Feb 2017 13:46:51 -0500
+Subject: [PATCH] mustard: Enable indirect GLX by default
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ os/utils.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/os/utils.c b/os/utils.c
+index da37588..7ab8540 100644
+--- a/os/utils.c
++++ b/os/utils.c
+@@ -194,7 +194,7 @@ Bool noGEExtension = FALSE;
+ 
+ Bool CoreDump;
+ 
+-Bool enableIndirectGLX = FALSE;
++Bool enableIndirectGLX = TRUE;
+ 
+ #ifdef PANORAMIX
+ Bool PanoramiXExtensionDisabledHack = FALSE;
+-- 
+2.9.3
+

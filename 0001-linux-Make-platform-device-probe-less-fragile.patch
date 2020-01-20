@@ -1,0 +1,76 @@
+From b96e7972e90144a697401f393ae8e1e12b3e767c Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Tue, 18 Sep 2018 14:37:51 -0400
+Subject: [PATCH] linux: Make platform device probe less fragile
+
+If we have platform devices - and we usually do - we would really want
+them to bind through the platform bus code not PCI. At the point where
+get_drm_info runs, however, we haven't yet taken our own VT, which means
+we can't perform drm "master" operations on the device. This is tragic,
+because the operation we need to perform here is fishing the bus id out
+of the kernel, which we can only do after drmSetInterfaceVersion, which
+for some reason stores that knowledge on the device not the file handle
+and thus needs master access. Since we fail, the probe logic gets very
+confused.
+
+Fortunately we know the format of the busid string (it's our own, drm
+copied it from xfree86), so we can scrape that out of the sysfs path. We
+do still potentially do the whole SetInterfaceVersion dance later on,
+but it's harmless at that point because we've taken the VT by then.
+
+This should all be vastly simplified, but that is not the cat we're
+skinning today.
+---
+ hw/xfree86/os-support/linux/lnx_platform.c | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/hw/xfree86/os-support/linux/lnx_platform.c b/hw/xfree86/os-support/linux/lnx_platform.c
+index 70374ac..cbf7dd2 100644
+--- a/hw/xfree86/os-support/linux/lnx_platform.c
++++ b/hw/xfree86/os-support/linux/lnx_platform.c
+@@ -29,6 +29,9 @@ get_drm_info(struct OdevAttributes *attribs, char *path, int delayed_index)
+     int fd;
+     int err = 0;
+     Bool paused, server_fd = FALSE;
++    const char pci_prefix[] = "/sys/devices/pci";
++
++    LogMessage(X_INFO, "Platform probe for %s\n", attribs->syspath);
+ 
+     fd = systemd_logind_take_fd(attribs->major, attribs->minor, path, &paused);
+     if (fd != -1) {
+@@ -53,13 +56,6 @@ get_drm_info(struct OdevAttributes *attribs, char *path, int delayed_index)
+     sv.drm_dd_major = -1;       /* Don't care */
+     sv.drm_dd_minor = -1;       /* Don't care */
+ 
+-    err = drmSetInterfaceVersion(fd, &sv);
+-    if (err) {
+-        xf86Msg(X_ERROR, "%s: failed to set DRM interface version 1.4: %s\n",
+-                path, strerror(-err));
+-        goto out;
+-    }
+-
+     /* for a delayed probe we've already added the device */
+     if (delayed_index == -1) {
+             xf86_add_platform_device(attribs, FALSE);
+@@ -69,9 +65,15 @@ get_drm_info(struct OdevAttributes *attribs, char *path, int delayed_index)
+     if (server_fd)
+         xf86_platform_devices[delayed_index].flags |= XF86_PDEV_SERVER_FD;
+ 
+-    buf = drmGetBusid(fd);
+-    xf86_platform_odev_attributes(delayed_index)->busid = XNFstrdup(buf);
+-    drmFreeBusid(buf);
++    /* parse out a bus id */
++    if (!strncmp(attribs->syspath, pci_prefix, strlen(pci_prefix))) {
++        char *dbdf = attribs->syspath + strlen(pci_prefix) + strlen("XXXX:XX") + 1;
++        asprintf(&xf86_platform_odev_attributes(delayed_index)->busid,
++                 "pci:%.12s", dbdf);
++        LogMessage(X_INFO, "Platform PCI device at %s\n",
++                   xf86_platform_odev_attributes(delayed_index)->busid);
++    }
++
+ 
+     v = drmGetVersion(fd);
+     if (!v) {
+-- 
+2.17.1
+

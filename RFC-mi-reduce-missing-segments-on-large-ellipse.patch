@@ -1,0 +1,46 @@
+From patchwork Thu Apr 16 12:04:21 2015
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Subject: [RFC] mi: reduce missing segments on large ellipse
+From: Olivier Fourdan <ofourdan@redhat.com>
+X-Patchwork-Id: 47327
+Message-Id: <1429185861-4411-2-git-send-email-ofourdan@redhat.com>
+To: xorg-devel@lists.x.org
+Cc: Olivier Fourdan <ofourdan@redhat.com>
+Date: Thu, 16 Apr 2015 14:04:21 +0200
+
+With larger ellipses, rounding will cause some spans close to vertical
+tangent to be of zero length, leading to sometimes rather large missing
+portion of the arc.
+
+Try to detect this case and work around it.
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1166989
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=91858
+Signed-off-by: Olivier Fourdan <ofourdan@redhat.com>
+---
+ mi/miarc.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/mi/miarc.c b/mi/miarc.c
+index e8bc87e..be9c94c 100644
+--- a/mi/miarc.c
++++ b/mi/miarc.c
+@@ -563,6 +563,16 @@ miComputeEllipseSpans(int lw, xArc * parc, miArcSpanData * spdata)
+                     outx = x + t;
+             }
+         }
++        if (ICEIL(xorg + outx) - ICEIL(xorg + inx) < lw ) {
++            if (inx <= 0.0) {
++                outx = outx + ICEIL(-r);
++                inx = inx + ICEIL(r);
++	    }
++	    else {
++                outx = outx + ICEIL(r);
++                inx = inx + ICEIL(-r);
++	    }
++        }
+         span->lx = ICEIL(xorg - outx);
+         if (inx <= 0.0) {
+             spdata->count1++;

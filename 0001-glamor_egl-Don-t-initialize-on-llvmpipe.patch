@@ -1,0 +1,48 @@
+From 722dc4717a4bb1c0ff84f45d0251e3e456476a28 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Fri, 14 Sep 2018 11:33:43 -0400
+Subject: [PATCH xserver] glamor_egl: Don't initialize on llvmpipe
+
+---
+ glamor/glamor_egl.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/glamor/glamor_egl.c b/glamor/glamor_egl.c
+index df278b1a1a..2f06d6587d 100644
+--- a/glamor/glamor_egl.c
++++ b/glamor/glamor_egl.c
+@@ -898,6 +898,7 @@ Bool
+ glamor_egl_init(ScrnInfoPtr scrn, int fd)
+ {
+     struct glamor_egl_screen_private *glamor_egl;
++    const GLubyte *renderer;
+ 
+     glamor_egl = calloc(sizeof(*glamor_egl), 1);
+     if (glamor_egl == NULL)
+@@ -992,6 +993,14 @@ glamor_egl_init(ScrnInfoPtr scrn, int fd)
+                    "Failed to make EGL context current\n");
+         goto error;
+     }
++
++    renderer = glGetString(GL_RENDERER);
++    if (strstr(renderer, "llvmpipe")) {
++        xf86DrvMsg(scrn->scrnIndex, X_INFO,
++                   "Refusing to try glamor on llvmpipe\n");
++        goto error;
++    }
++
+     /*
+      * Force the next glamor_make_current call to set the right context
+      * (in case of multiple GPUs using glamor)
+@@ -1005,7 +1014,7 @@ glamor_egl_init(ScrnInfoPtr scrn, int fd)
+     }
+ 
+     xf86DrvMsg(scrn->scrnIndex, X_INFO, "glamor X acceleration enabled on %s\n",
+-               glGetString(GL_RENDERER));
++               renderer);
+ 
+ #ifdef GBM_BO_WITH_MODIFIERS
+     if (epoxy_has_egl_extension(glamor_egl->display,
+-- 
+2.17.1
+

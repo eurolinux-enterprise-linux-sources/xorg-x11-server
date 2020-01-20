@@ -1,0 +1,52 @@
+From a22a81a0de76b96b01f32f59fd2a4b4af675d9b1 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Fri, 5 Oct 2018 15:12:18 -0400
+Subject: [PATCH] modesetting: Hide atomic behind Option "Atomic" "[boolean]"
+
+You can turn it on if the kernel driver supports it and you ask for it
+explicitly, but right now it's too fragile.
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ hw/xfree86/drivers/modesetting/driver.c | 5 ++++-
+ hw/xfree86/drivers/modesetting/driver.h | 1 +
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/hw/xfree86/drivers/modesetting/driver.c b/hw/xfree86/drivers/modesetting/driver.c
+index 24311c1..4fc62e4 100644
+--- a/hw/xfree86/drivers/modesetting/driver.c
++++ b/hw/xfree86/drivers/modesetting/driver.c
+@@ -131,6 +131,7 @@ static const OptionInfoRec Options[] = {
+     {OPTION_PAGEFLIP, "PageFlip", OPTV_BOOLEAN, {0}, FALSE},
+     {OPTION_ZAPHOD_HEADS, "ZaphodHeads", OPTV_STRING, {0}, FALSE},
+     {OPTION_DOUBLE_SHADOW, "DoubleShadow", OPTV_BOOLEAN, {0}, FALSE},
++    {OPTION_ATOMIC, "Atomic", OPTV_BOOLEAN, {0}, FALSE},
+     {-1, NULL, OPTV_NONE, {0}, FALSE}
+ };
+ 
+@@ -1061,7 +1062,9 @@ PreInit(ScrnInfoPtr pScrn, int flags)
+     }
+ 
+     ret = drmSetClientCap(ms->fd, DRM_CLIENT_CAP_ATOMIC, 1);
+-    ms->atomic_modeset = (ret == 0);
++    if ((ms->atomic_modeset = (ret == 0)))
++        ms->atomic_modeset = xf86ReturnOptValBool(ms->drmmode.Options,
++                                                  OPTION_ATOMIC, FALSE);
+ 
+     ms->kms_has_modifiers = FALSE;
+     ret = drmGetCap(ms->fd, DRM_CAP_ADDFB2_MODIFIERS, &value);
+diff --git a/hw/xfree86/drivers/modesetting/driver.h b/hw/xfree86/drivers/modesetting/driver.h
+index c8db4b8..46ba78a 100644
+--- a/hw/xfree86/drivers/modesetting/driver.h
++++ b/hw/xfree86/drivers/modesetting/driver.h
+@@ -51,6 +51,7 @@ typedef enum {
+     OPTION_PAGEFLIP,
+     OPTION_ZAPHOD_HEADS,
+     OPTION_DOUBLE_SHADOW,
++    OPTION_ATOMIC,
+ } modesettingOpts;
+ 
+ typedef struct
+-- 
+2.19.0
+

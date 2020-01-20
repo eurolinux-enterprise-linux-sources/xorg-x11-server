@@ -1,0 +1,61 @@
+From 846596b38165e5170d1a410f37ce7c5280db649d Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Tue, 9 May 2017 17:02:17 -0400
+Subject: [PATCH] modesetting: software cursor hack
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ hw/xfree86/drivers/modesetting/driver.c | 30 +++++++++++++++++++++++++++---
+ 1 file changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/hw/xfree86/drivers/modesetting/driver.c b/hw/xfree86/drivers/modesetting/driver.c
+index 3da69a3..31a58fd 100644
+--- a/hw/xfree86/drivers/modesetting/driver.c
++++ b/hw/xfree86/drivers/modesetting/driver.c
+@@ -878,6 +878,30 @@ ms_get_drm_master_fd(ScrnInfoPtr pScrn)
+ }
+ 
+ static Bool
++msDefaultSoftwareCursor(modesettingPtr ms)
++{
++    Bool ret = FALSE;
++    drmVersionPtr v = drmGetVersion(ms->fd);
++
++    /*
++     * This is horrific, don't hate me.  The _runtime_ fallback to software
++     * cursor doesn't seem to take on the first try; you get no cursor in
++     * gdm, but it works once you log in.  However just bombing out at
++     * init time seems to work fine.  So for drivers without hardware cursors
++     * (or for G200SE, where they're basically unusable) just default to sw.
++     */
++    if (!strcmp(v->name, "udl") ||
++	!strcmp(v->name, "mgag200") ||
++	!strcmp(v->name, "cirrus") ||
++	!strcmp(v->name, "ast"))
++	ret = TRUE;
++
++    drmFreeVersion(v);
++
++    return ret;
++}
++
++static Bool
+ PreInit(ScrnInfoPtr pScrn, int flags)
+ {
+     modesettingPtr ms;
+@@ -966,9 +990,9 @@ PreInit(ScrnInfoPtr pScrn, int flags)
+     if (!xf86SetDefaultVisual(pScrn, -1))
+         return FALSE;
+ 
+-    if (xf86ReturnOptValBool(ms->drmmode.Options, OPTION_SW_CURSOR, FALSE)) {
+-        ms->drmmode.sw_cursor = TRUE;
+-    }
++    if (!xf86GetOptValBool(ms->drmmode.Options, OPTION_SW_CURSOR,
++			   &ms->drmmode.sw_cursor))
++	ms->drmmode.sw_cursor = msDefaultSoftwareCursor(ms);
+ 
+     ms->cursor_width = 64;
+     ms->cursor_height = 64;
+-- 
+2.12.0
+

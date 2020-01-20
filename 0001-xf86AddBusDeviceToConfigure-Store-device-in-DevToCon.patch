@@ -1,0 +1,26 @@
+From 6db849550c71b6af00c220d03816495c970a5196 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Wed, 13 Aug 2014 12:57:59 -0400
+Subject: [PATCH] xf86AddBusDeviceToConfigure(): Store device in
+ DevToConfig[i].pVideo
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ hw/xfree86/common/xf86Configure.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/xfree86/common/xf86Configure.c b/hw/xfree86/common/xf86Configure.c
+index 91e8df9..423b200 100644
+--- a/hw/xfree86/common/xf86Configure.c
++++ b/hw/xfree86/common/xf86Configure.c
+@@ -90,6 +90,7 @@ xf86AddBusDeviceToConfigure(const char *driver, BusType bus, void *busData,
+         switch (bus) {
+ #ifdef XSERVER_LIBPCIACCESS
+         case BUS_PCI:
++	    DevToConfig[i].pVideo = busData;
+             ret = xf86PciConfigure(busData, DevToConfig[i].pVideo);
+             break;
+ #endif
+-- 
+1.9.3
+

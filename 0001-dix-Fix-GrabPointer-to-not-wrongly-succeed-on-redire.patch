@@ -1,0 +1,71 @@
+From 19573148ff40b6b4eb335e92cb97ac97ec191450 Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Tue, 12 Aug 2014 13:32:07 -0400
+Subject: [PATCH] dix: Fix GrabPointer to not wrongly succeed on redirected
+ windows
+
+Not correct, but correcter.  See upstream discussion for more details,
+hopefully this will get resolved properly in 1.16.
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ dix/events.c | 33 ++++++++++++++++++++++++++++++---
+ 1 file changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/dix/events.c b/dix/events.c
+index b8c67fd..9300a3c 100644
+--- a/dix/events.c
++++ b/dix/events.c
+@@ -3616,10 +3616,38 @@ ProcWarpPointer(ClientPtr client)
+     return Success;
+ }
+ 
++/*
++ * this is better but still wrong.  upstream discussion:
++ * http://lists.freedesktop.org/archives/xorg-devel/2014-July/043374.html
++ *
++ * in the meantime all we're doing is amending the redirected window path
++ * to check whether borderClip (total window area) overlaps the root window
++ * space at all.
++ *
++ * note that the redirect path doesn't need to account for panoramix'
++ * rewrite of root window geometry, because root windows can't be
++ * redirected.
++ */
++static Bool
++WindowIsConfineToAble(WindowPtr pWin)
++{
++    if (pWin->redirectDraw == RedirectDrawNone) {
++        if (RegionNotEmpty(&pWin->borderSize))
++            return TRUE;
++    } else {
++        WindowPtr root = pWin->drawable.pScreen->root;
++        if (rgnOUT != RegionContainsRect(&pWin->borderClip,
++                                         RegionExtents(&root->winSize)))
++            return TRUE;
++    }
++
++    return FALSE;
++}
++
+ static Bool
+ BorderSizeNotEmpty(DeviceIntPtr pDev, WindowPtr pWin)
+ {
+-    if (RegionNotEmpty(&pWin->borderSize))
++    if (WindowIsConfineToAble(pWin))
+         return TRUE;
+ 
+ #ifdef PANORAMIX
+@@ -3627,8 +3655,7 @@ BorderSizeNotEmpty(DeviceIntPtr pDev, WindowPtr pWin)
+         int i;
+ 
+         FOR_NSCREENS_FORWARD_SKIP(i) {
+-            if (RegionNotEmpty
+-                (&pDev->spriteInfo->sprite->windows[i]->borderSize))
++            if (WindowIsConfineToAble(pDev->spriteInfo->sprite->windows[i]))
+                 return TRUE;
+         }
+     }
+-- 
+1.9.3
+
