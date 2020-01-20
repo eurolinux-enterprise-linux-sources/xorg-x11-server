@@ -42,7 +42,7 @@
 Summary:   X.Org X11 X server
 Name:      xorg-x11-server
 Version:   1.20.1
-Release:   5.3%{?gitdate:.%{gitdate}}%{?dist}
+Release:   5.6%{?gitdate:.%{gitdate}}%{?dist}
 URL:       http://www.x.org
 License:   MIT
 Group:     User Interface/X
@@ -108,6 +108,13 @@ Patch9754: 0001-xfree86-try-harder-to-span-on-multihead.patch
 Patch9755: 0001-modesetting-Hide-atomic-behind-Option-Atomic-boolean.patch
 Patch9756: 0001-xfree86-LeaveVT-from-xf86CrtcCloseScreen.patch
 Patch9757: 0001-Disable-logfile-and-modulepath-when-running-with-ele.patch
+
+# Bug 1680120 - upstream backport to fix user switching
+Patch9900: 0001-xfree86-Only-switch-to-original-VT-if-it-is-active.patch
+# Bug 1717309 - Startx will have segment fault with hyper-V environment
+Patch9901: 0001-Fix-segfault-on-probing-a-non-PCI-platform-device-on.patch
+# ... which also needs https://gitlab.freedesktop.org/xorg/xserver/merge_requests/217
+Patch9902: 0001-linux-Fix-platform-device-PCI-detection-for-complex-.patch
 
 %global moduledir	%{_libdir}/xorg/modules
 %global drimoduledir	%{_libdir}/dri
@@ -590,6 +597,16 @@ rm -rf $RPM_BUILD_ROOT
 %{xserver_source_dir}
 
 %changelog
+* Wed Jun 19 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.6
+- Fix platform device PCI detection for complex bus topologies
+
+* Mon Jun 17 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.5
+- Fix segfault in non-PCI platform detection
+
+* Wed Jun 12 2019 Ray Strode <rstrode@redhat.com> - 1.20.1-5.4
+- Stop VT switching when inactive server dies
+  Related: #1719361
+
 * Tue Feb 12 2019 Adam Jackson <ajax@redhat.com> - 1.20.1-5.3
 - Sync platform probe patch with upstream
 
